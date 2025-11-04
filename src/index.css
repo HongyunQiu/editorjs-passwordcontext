@@ -1,0 +1,98 @@
+.cdx-password {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  position: relative;
+}
+
+.cdx-password__content {
+  min-height: 32px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  position: relative;
+  transition: border-color .2s ease, background-color .2s ease;
+}
+
+.cdx-password__content:hover {
+  border-color: #d1d5db;
+}
+
+.cdx-password--locked .cdx-password__content {
+  color: #6b7280;
+  cursor: not-allowed;
+  background-image: repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 12px, #eef0f3 12px, #eef0f3 24px);
+}
+
+/* 右上角状态徽标 */
+.cdx-password--locked .cdx-password__content::before {
+  content: '🔒 受保护';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 4px 8px;
+  background: rgba(17, 24, 39, 0.85);
+  color: #fff;
+  border-radius: 9999px;
+  letter-spacing: .5px;
+}
+
+/* 居中淡化锁图标（不遮挡文字，可读性优先） */
+.cdx-password--locked .cdx-password__content::after {
+  content: '🔒';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: rgba(17, 24, 39, 0.15);
+  pointer-events: none;
+}
+
+.cdx-password__controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cdx-password__input {
+  flex: 1 1 auto;
+  height: 32px;
+  padding: 6px 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  outline: none;
+}
+
+.cdx-password__button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #e0e0e0;
+  background: #fafafa;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cdx-password__button:hover {
+  background: #f0f0f0;
+}
+
+.cdx-password [contentEditable=true][data-placeholder]::before{
+  position: absolute;
+  content: attr(data-placeholder);
+  color: #707684;
+  font-weight: normal;
+  opacity: 0;
+}
+
+.cdx-password [contentEditable=true][data-placeholder]:empty::before {
+  opacity: 1;
+}
+
+.cdx-password [contentEditable=true][data-placeholder]:empty:focus::before {
+  opacity: 0;
+}
