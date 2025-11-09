@@ -70,7 +70,7 @@ export default class PasswordBlock implements BlockTool {
   private unlocked: boolean;
   private currentPassword?: string;
 
-  private static readonly KDF_ITERATIONS = 100000;
+  private static readonly KDF_ITERATIONS = 300000;
 
   constructor({ data, config, api, readOnly, block }: PasswordParams) {
     this.api = api;
@@ -152,7 +152,7 @@ export default class PasswordBlock implements BlockTool {
       const input = make('input', [this.css.input], {
         type: 'password',
         placeholder: this.placeholders.passwordPlaceholder,
-        autocomplete: 'current-password',
+        autocomplete: 'new-password',
       }) as HTMLInputElement;
       const button = make('button', [this.css.button], {
         type: 'button',
@@ -177,7 +177,7 @@ export default class PasswordBlock implements BlockTool {
             this.unlocked = true;
             updateContentLockedState();
             controls.remove();
-            if (!this.readOnly) renderUnlockedEditControls();
+            renderUnlockedEditControls();
             return;
           }
 
@@ -186,7 +186,7 @@ export default class PasswordBlock implements BlockTool {
           this.unlocked = true;
           updateContentLockedState();
           controls.remove();
-          if (!this.readOnly) renderUnlockedEditControls();
+          renderUnlockedEditControls();
           return;
         } catch (e) {
           input.setCustomValidity(this.api.i18n.t('密码错误'));
@@ -213,6 +213,17 @@ export default class PasswordBlock implements BlockTool {
       }) as HTMLButtonElement;
 
       const relock = async () => {
+        // 只读模式下：不进行加密与数据变更，仅清理明文与口令并恢复上锁视图
+        if (this.readOnly) {
+          this.data.content = undefined;
+          this.currentPassword = undefined;
+          this.unlocked = false;
+          updateContentLockedState();
+          controls.remove();
+          renderLockedControls();
+          return;
+        }
+
         // 保存当前编辑内容，进行加密后上锁
         this.data.content = contentEl.innerHTML;
         const password = this.currentPassword;
@@ -221,6 +232,8 @@ export default class PasswordBlock implements BlockTool {
           this.data.content = undefined; // 清除明文
         }
         this.unlocked = false;
+        // 清理内存中的口令
+        this.currentPassword = undefined;
         updateContentLockedState();
         controls.remove();
         renderLockedControls();
@@ -234,8 +247,8 @@ export default class PasswordBlock implements BlockTool {
     // 上锁时显示解锁控件（编辑/只读均显示）
     if (!this.unlocked) {
       renderLockedControls();
-    } else if (!this.readOnly) {
-      // 若初始即解锁（理论上当前为 false），编辑态下展示上锁按钮
+    } else {
+      // 解锁后，无论编辑或只读均展示“隐藏”按钮（只读模式下不会修改数据，仅恢复上锁视图）
       renderUnlockedEditControls();
     }
 
@@ -310,8 +323,9 @@ export default class PasswordBlock implements BlockTool {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await this.deriveAesGcmKey(password, salt, PasswordBlock.KDF_ITERATIONS);
+    const aad = this.getAad();
     const cipherBuf = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as unknown as BufferSource },
+      { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
       key,
       enc.encode(plain) as unknown as BufferSource
     );
@@ -331,11 +345,19 @@ export default class PasswordBlock implements BlockTool {
     const iv = this.fromBase64(payload.iv);
     const key = await this.deriveAesGcmKey(password, salt, payload.iter);
     const cipherBytes = this.fromBase64(payload.cipher);
+    const aad = this.getAad();
     const plainBuf = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv as unknown as BufferSource },
+      { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
       key,
       cipherBytes as unknown as BufferSource
     );
     return dec.decode(plainBuf);
+  }
+
+  private getAad(): Uint8Array {
+    const id = (this.block && (this.block as unknown as { id?: string }).id) || '';
+    const enc = new TextEncoder();
+    // 绑定上下文，防止密文移植到其他块/文档
+    return enc.encode(`editorjs-password:${id}`);
   }
 }
