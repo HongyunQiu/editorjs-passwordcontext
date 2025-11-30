@@ -8,11 +8,25 @@
 - 输入密码并点击“显示”解锁后，才展示并（在编辑模式）允许编辑内容
 - 新建空白块时，第一次输入的密码将作为该块的加密密钥；点击“隐藏”会用该密钥加密并清除明文
 
-## 编译
+---
 
-```shell
+## 编译与本地开发
+
+在 `PlugIns/editorjs-passwordcontext` 目录下：
+
+```bash
+npm install
 npx --yes vite build
 ```
+
+常用脚本（见 `package.json`）：
+
+- `npm run dev`：本地开发（Vite 开发服务器）
+- `npm run build`：打包生成 `dist/password.umd.js` 与 `dist/password.mjs`
+- `npm run preview`：预览打包结果
+
+---
+
 ## 安装
 
 ```shell
