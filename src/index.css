@@ -3,26 +3,63 @@
   display: grid;
   gap: 10px;
   position: relative;
+  /* 与 QNotes 主题变量对齐（带 fallback，脱离 QNotes 也可用） */
+  --cdx-password-surface: var(--surface, #ffffff);
+  --cdx-password-surface-muted: var(--surface-muted, #fafafa);
+  --cdx-password-text: var(--text, #111827);
+  --cdx-password-text-muted: var(--text-muted, #6b7280);
+  --cdx-password-border: var(--border, #e5e7eb);
+  --cdx-password-border-hover: var(--border, #d1d5db);
+
+  --cdx-password-control-bg: var(--control-bg, #f3f4f6);
+  --cdx-password-control-bg-hover: var(--control-bg-hover, #e5e7eb);
+  --cdx-password-control-text: var(--control-text, #374151);
+
+  /* 锁定态条纹与水印（浅色默认） */
+  --cdx-password-locked-stripe-a: #f3f4f6;
+  --cdx-password-locked-stripe-b: #eef0f3;
+  --cdx-password-watermark: rgba(17, 24, 39, 0.15);
+
+  /* 右上角“受保护”徽标（浅色默认） */
+  --cdx-password-badge-bg: rgba(17, 24, 39, 0.85);
+  --cdx-password-badge-text: #ffffff;
+  --cdx-password-placeholder: var(--text-muted, #707684);
+  --cdx-password-primary: var(--primary, #3b82f6);
 }
 
 .cdx-password__content {
   min-height: 32px;
   padding: 10px 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--cdx-password-border);
   border-radius: 8px;
-  background: #fff;
+  /* 深色下使用更暗的 --surface-muted，避免“发灰偏亮” */
+  background: var(--cdx-password-surface-muted);
+  background-color: var(--cdx-password-surface-muted) !important;
+  color: var(--cdx-password-text);
   position: relative;
   transition: border-color .2s ease, background-color .2s ease;
+  caret-color: var(--cdx-password-text);
 }
 
 .cdx-password__content:hover {
-  border-color: #d1d5db;
+  border-color: var(--cdx-password-border-hover);
+}
+
+.cdx-password__content:focus {
+  border-color: var(--cdx-password-primary);
 }
 
 .cdx-password--locked .cdx-password__content {
-  color: #6b7280;
+  color: var(--cdx-password-text-muted);
   cursor: not-allowed;
-  background-image: repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 12px, #eef0f3 12px, #eef0f3 24px);
+  background-color: var(--cdx-password-surface-muted) !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--cdx-password-locked-stripe-a) 0,
+    var(--cdx-password-locked-stripe-a) 12px,
+    var(--cdx-password-locked-stripe-b) 12px,
+    var(--cdx-password-locked-stripe-b) 24px
+  );
 }
 
 /* 右上角状态徽标 */
@@ -34,8 +71,8 @@
   font-size: 10px;
   line-height: 1;
   padding: 4px 8px;
-  background: rgba(17, 24, 39, 0.85);
-  color: #fff;
+  background: var(--cdx-password-badge-bg);
+  color: var(--cdx-password-badge-text);
   border-radius: 9999px;
   letter-spacing: .5px;
 }
@@ -49,7 +86,7 @@
   align-items: center;
   justify-content: center;
   font-size: 40px;
-  color: rgba(17, 24, 39, 0.15);
+  color: var(--cdx-password-watermark);
   pointer-events: none;
 }
 
@@ -63,28 +100,54 @@
   flex: 1 1 auto;
   height: 32px;
   padding: 6px 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--cdx-password-border);
   border-radius: 4px;
   outline: none;
+  /* 输入框在 QNotes 中更接近 control-bg 的“控件”色 */
+  background: var(--cdx-password-control-bg);
+  background-color: var(--cdx-password-control-bg) !important;
+  color: var(--cdx-password-text);
+  caret-color: var(--cdx-password-text);
+  transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+
+.cdx-password__input:focus {
+  border-color: var(--cdx-password-primary);
+  /* 与 QNotes input focus 视觉一致 */
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.20);
 }
 
 .cdx-password__button {
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid #e0e0e0;
-  background: #fafafa;
+  padding: 0.3rem 0.8rem;
+  line-height: 1.1;
+  font: inherit;
+  border: none;
+  background: var(--cdx-password-control-bg-hover);
+  color: var(--cdx-password-control-text);
   border-radius: 4px;
   cursor: pointer;
+  font-weight: 500;
+  transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .05s ease;
 }
 
 .cdx-password__button:hover {
-  background: #f0f0f0;
+  background: var(--cdx-password-control-bg);
+}
+
+.cdx-password__button:active {
+  transform: translateY(0.5px);
+}
+
+.cdx-password__button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.20);
 }
 
 .cdx-password [contentEditable=true][data-placeholder]::before{
   position: absolute;
   content: attr(data-placeholder);
-  color: #707684;
+  color: var(--cdx-password-placeholder);
   font-weight: normal;
   opacity: 0;
 }
@@ -95,4 +158,66 @@
 
 .cdx-password [contentEditable=true][data-placeholder]:empty:focus::before {
   opacity: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cdx-password {
+    /* 当宿主未提供 QNotes 变量时，给出暗色 fallback（用于独立测试页） */
+    --cdx-password-surface: var(--surface, #1b1c1f);
+    --cdx-password-surface-muted: var(--surface-muted, #121214);
+    --cdx-password-text: var(--text, #e9e9eb);
+    --cdx-password-text-muted: var(--text-muted, #a1a1aa);
+    --cdx-password-border: var(--border, #2a2b2f);
+    --cdx-password-border-hover: var(--border, #3a3b41);
+
+    /* 控件背景：深色下跟随 QNotes 的 control-bg */
+    --cdx-password-control-bg: var(--control-bg, #222327);
+    --cdx-password-control-bg-hover: var(--control-bg-hover, #2b2c31);
+
+    /* 深色下的锁定条纹与徽标/水印对比度 */
+    --cdx-password-locked-stripe-a: rgba(255, 255, 255, 0.06);
+    --cdx-password-locked-stripe-b: rgba(255, 255, 255, 0.03);
+    --cdx-password-watermark: rgba(255, 255, 255, 0.12);
+
+    /* 深色下徽标改为“浅色底 + 主题字色”，避免黑底不显眼 */
+    --cdx-password-badge-bg: rgba(255, 255, 255, 0.16);
+    --cdx-password-badge-text: var(--text, #e9e9eb);
+  }
+
+  /* 强制应用背景色，防止被 Editor.js 默认样式覆盖 */
+  .cdx-password .cdx-password__content {
+    background-color: var(--cdx-password-surface-muted) !important;
+  }
+
+  .cdx-password .cdx-password__input {
+    background-color: var(--cdx-password-control-bg) !important;
+  }
+
+  /* 按钮：对齐 QNotes 深色“半透明 + 轻辉光”风格 */
+  .cdx-password__button {
+    background: rgba(59,130,246,0.16);
+    border: 1px solid rgba(59,130,246,0.35);
+    color: var(--cdx-password-text);
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.10),
+      0 8px 22px rgba(0,0,0,0.25),
+      0 0 16px rgba(59,130,246,0.14);
+  }
+  .cdx-password__button:hover {
+    background: rgba(59,130,246,0.24);
+    border-color: rgba(59,130,246,0.45);
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.14),
+      0 10px 26px rgba(0,0,0,0.28),
+      0 0 18px rgba(59,130,246,0.20);
+  }
+
+  .cdx-password__button:focus-visible {
+    /* 深色下 focus 也保持一致（不叠加太多亮度） */
+    box-shadow:
+      0 0 0 1px rgba(59,130,246,0.14),
+      0 0 0 3px rgba(59,130,246,0.22),
+      0 10px 26px rgba(0,0,0,0.28),
+      0 0 18px rgba(59,130,246,0.20);
+  }
 }
