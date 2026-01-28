@@ -189,8 +189,32 @@
     background-color: var(--cdx-password-surface-muted) !important;
   }
 
+  /*
+    兼容“粘贴富文本”场景：
+    - 从网页/Office 拷贝进来的内容常带内联 style（background-color / color）
+    - 深色主题下这些内联白底/灰字会让内容几乎不可读
+    处理策略：在暗色模式中，仅对 *带内联样式* 的子元素做兜底覆盖，保证可读性。
+  */
+  .cdx-password .cdx-password__content [style*="background"],
+  .cdx-password .cdx-password__content [bgcolor] {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+  .cdx-password .cdx-password__content [style*="color"] {
+    color: var(--cdx-password-text) !important;
+  }
+
   .cdx-password .cdx-password__input {
     background-color: var(--cdx-password-control-bg) !important;
+  }
+
+  /* 处理“粘贴带格式文本”的白色背景：
+     - 一些来源（网页/Office/IM）会把背景色以内联 style 写到 span/div 上
+     - 暗色主题下会导致浅色文字叠在白底上，看不清
+     - 用 !important 覆盖非 !important 的 inline style，确保可读性 */
+  .cdx-password .cdx-password__content [style*="background"] {
+    background: transparent !important;
+    background-color: transparent !important;
   }
 
   /* 按钮：对齐 QNotes 深色“半透明 + 轻辉光”风格 */
