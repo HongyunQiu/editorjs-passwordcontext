@@ -15,7 +15,7 @@ export interface PasswordConfig extends ToolConfig {
  */
 export interface EncryptedPayload {
     v: number;
-    algo: 'PBKDF2-AES-GCM';
+    algo: 'PBKDF2-AES-GCM' | 'PBKDF2-AES-CBC';
     iter: number;
     salt: string;
     iv: string;
@@ -60,6 +60,10 @@ export default class PasswordBlock implements BlockTool {
     save(wrapper: HTMLDivElement): Promise<PasswordData>;
     static get sanitize(): SanitizerConfig;
     validate(data: PasswordData): boolean;
+    private hasWebCrypto;
+    private notifyError;
+    private getAadString;
+    private randomBytes;
     private getKeyMaterial;
     private deriveAesGcmKey;
     private toBase64;

@@ -3,6 +3,7 @@ import './index.css';
 import { IconQuote } from '@codexteam/icons';
 import { make } from '@editorjs/dom';
 import type { API, BlockAPI, BlockTool, ToolConfig, SanitizerConfig } from '@editorjs/editorjs';
+import CryptoJS from 'crypto-js';
 
 /**
  * 密码保护工具的配置
@@ -20,7 +21,7 @@ export interface PasswordConfig extends ToolConfig {
  */
 export interface EncryptedPayload {
   v: number; // schema version
-  algo: 'PBKDF2-AES-GCM';
+  algo: 'PBKDF2-AES-GCM' | 'PBKDF2-AES-CBC';
   iter: number;
   salt: string; // base64
   iv: string; // base64
@@ -154,6 +155,34 @@ export default class PasswordBlock implements BlockTool {
         placeholder: this.placeholders.passwordPlaceholder,
         autocomplete: 'new-password',
       }) as HTMLInputElement;
+      /**
+       * 避免触发浏览器/密码管理器的“保存密码/自动填充”：
+       * - 标准属性：autocomplete=new-password/ off（不同浏览器策略不同）
+       * - 避免 name/id 包含 password 等关键字
+       * - 密码管理器 vendor-specific ignore 属性
+       * - readonly on init：很多自动填充只在可编辑时触发；聚焦后解除
+       */
+      input.name = 'qnotes-editorjs-passcode';
+      input.id = `qnotes-editorjs-passcode-${(this.block as unknown as { id?: string }).id || 'block'}`;
+      input.spellcheck = false;
+      input.setAttribute('autocapitalize', 'off');
+      input.setAttribute('autocorrect', 'off');
+      input.setAttribute('autocomplete', 'new-password');
+      input.setAttribute('data-1p-ignore', 'true'); // 1Password
+      input.setAttribute('data-lpignore', 'true'); // LastPass
+      input.setAttribute('data-bwignore', 'true'); // Bitwarden
+      input.setAttribute('data-keeper-ignore', 'true'); // Keeper
+      input.setAttribute('data-form-type', 'other'); // 一些填充引擎会参考
+
+      // 小技巧：先 readonly，用户真正 focus 后再解除，减少自动填充触发概率
+      input.readOnly = true;
+      input.addEventListener(
+        'focus',
+        () => {
+          input.readOnly = false;
+        },
+        { once: true }
+      );
       const button = make('button', [this.css.button], {
         type: 'button',
         innerHTML: this.placeholders.buttonText,
@@ -227,16 +256,26 @@ export default class PasswordBlock implements BlockTool {
         // 保存当前编辑内容，进行加密后上锁
         this.data.content = contentEl.innerHTML;
         const password = this.currentPassword;
-        if (password) {
+        if (!password) {
+          // 理论上不会发生：已解锁但没有口令；此时不允许进入“隐藏”
+          this.notifyError(this.api.i18n.t('未设置密码，无法隐藏'));
+          return;
+        }
+
+        try {
           this.data.encrypted = await this.encryptWithPassword(this.data.content || '', password);
           this.data.content = undefined; // 清除明文
+          this.unlocked = false;
+          // 清理内存中的口令
+          this.currentPassword = undefined;
+          updateContentLockedState();
+          controls.remove();
+          renderLockedControls();
+        } catch (e) {
+          // 非安全上下文下 WebCrypto 不可用（例如 http://非localhost）
+          // 这里给出明确提示，避免“点击无反应”
+          this.notifyError(this.api.i18n.t('当前环境无法进行加密（需要 HTTPS 或本机 localhost）。请使用 HTTPS 访问后再隐藏。'));
         }
-        this.unlocked = false;
-        // 清理内存中的口令
-        this.currentPassword = undefined;
-        updateContentLockedState();
-        controls.remove();
-        renderLockedControls();
       };
 
       lockBtn.addEventListener('click', relock);
@@ -287,6 +326,40 @@ export default class PasswordBlock implements BlockTool {
   }
 
   // ======== Crypto helpers (Web Crypto API) ========
+  private hasWebCrypto(): boolean {
+    // 注意：crypto.subtle 通常只在安全上下文中可用（HTTPS / localhost）
+    return typeof globalThis !== 'undefined'
+      && typeof (globalThis as unknown as { crypto?: Crypto }).crypto !== 'undefined'
+      && !!(globalThis as unknown as { crypto?: Crypto }).crypto?.subtle;
+  }
+
+  private notifyError(message: string): void {
+    const notifier = (this.api as unknown as { notifier?: { show: (opts: { message: string; style?: string }) => void } }).notifier;
+    if (notifier && typeof notifier.show === 'function') {
+      notifier.show({ message, style: 'error' });
+      return;
+    }
+    // 兜底：至少在控制台可见
+    // eslint-disable-next-line no-console
+    console.error(message);
+  }
+
+  private getAadString(): string {
+    const id = (this.block && (this.block as unknown as { id?: string }).id) || '';
+    return `editorjs-password:${id}`;
+  }
+
+  private randomBytes(len: number): Uint8Array {
+    const g = globalThis as unknown as { crypto?: Crypto };
+    if (g.crypto && typeof g.crypto.getRandomValues === 'function') {
+      return g.crypto.getRandomValues(new Uint8Array(len));
+    }
+    // 极端兜底：无 crypto.getRandomValues（非常少见）
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) out[i] = Math.floor(Math.random() * 256);
+    return out;
+  }
+
   private async getKeyMaterial(password: string): Promise<CryptoKey> {
     const enc = new TextEncoder();
     return await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']);
@@ -303,7 +376,7 @@ export default class PasswordBlock implements BlockTool {
     );
   }
 
-  private toBase64(buffer: ArrayBuffer): string {
+  private toBase64(buffer: ArrayBufferLike): string {
     const bytes = new Uint8Array(buffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
@@ -319,45 +392,110 @@ export default class PasswordBlock implements BlockTool {
   }
 
   private async encryptWithPassword(plain: string, password: string): Promise<EncryptedPayload> {
-    const enc = new TextEncoder();
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await this.deriveAesGcmKey(password, salt, PasswordBlock.KDF_ITERATIONS);
-    const aad = this.getAad();
-    const cipherBuf = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
-      key,
-      enc.encode(plain) as unknown as BufferSource
-    );
+    const aadString = this.getAadString();
+
+    /**
+     * 优先使用 WebCrypto（AES-GCM + AAD，安全性更好）
+     * 在 http://非localhost 环境下 crypto.subtle 往往不可用，此时降级到 CryptoJS（AES-CBC）
+     */
+    if (this.hasWebCrypto()) {
+      const enc = new TextEncoder();
+      const salt = this.randomBytes(16);
+      const iv = this.randomBytes(12);
+      const key = await this.deriveAesGcmKey(`${password}:${aadString}`, salt, PasswordBlock.KDF_ITERATIONS);
+      const aad = new TextEncoder().encode(aadString);
+      const cipherBuf = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
+        key,
+        enc.encode(plain) as unknown as BufferSource
+      );
+      return {
+        v: 1,
+        algo: 'PBKDF2-AES-GCM',
+        iter: PasswordBlock.KDF_ITERATIONS,
+        salt: this.toBase64(salt.buffer),
+        iv: this.toBase64(iv.buffer),
+        cipher: this.toBase64(cipherBuf),
+      };
+    }
+
+    // ---- Fallback: CryptoJS PBKDF2 + AES-CBC (可在非安全上下文工作) ----
+    const saltBytes = this.randomBytes(16);
+    const ivBytes = this.randomBytes(16);
+
+    const saltWA = CryptoJS.lib.WordArray.create(saltBytes as unknown as number[]);
+    const ivWA = CryptoJS.lib.WordArray.create(ivBytes as unknown as number[]);
+
+    const key = CryptoJS.PBKDF2(`${password}:${aadString}`, saltWA, {
+      keySize: 256 / 32,
+      iterations: PasswordBlock.KDF_ITERATIONS,
+    });
+
+    const encrypted = CryptoJS.AES.encrypt(plain, key, {
+      iv: ivWA,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
+
     return {
       v: 1,
-      algo: 'PBKDF2-AES-GCM',
+      algo: 'PBKDF2-AES-CBC',
       iter: PasswordBlock.KDF_ITERATIONS,
-      salt: this.toBase64(salt.buffer),
-      iv: this.toBase64(iv.buffer),
-      cipher: this.toBase64(cipherBuf),
+      salt: this.toBase64(saltBytes.buffer),
+      iv: this.toBase64(ivBytes.buffer),
+      cipher: encrypted.ciphertext.toString(CryptoJS.enc.Base64),
     };
   }
 
   private async decryptWithPassword(payload: EncryptedPayload, password: string): Promise<string> {
-    const dec = new TextDecoder();
-    const salt = this.fromBase64(payload.salt);
-    const iv = this.fromBase64(payload.iv);
-    const key = await this.deriveAesGcmKey(password, salt, payload.iter);
-    const cipherBytes = this.fromBase64(payload.cipher);
-    const aad = this.getAad();
-    const plainBuf = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
-      key,
-      cipherBytes as unknown as BufferSource
-    );
-    return dec.decode(plainBuf);
+    const aadString = this.getAadString();
+
+    if (payload.algo === 'PBKDF2-AES-GCM') {
+      if (!this.hasWebCrypto()) {
+        throw new Error('WebCryptoUnavailable');
+      }
+      const dec = new TextDecoder();
+      const salt = this.fromBase64(payload.salt);
+      const iv = this.fromBase64(payload.iv);
+      const key = await this.deriveAesGcmKey(`${password}:${aadString}`, salt, payload.iter);
+      const cipherBytes = this.fromBase64(payload.cipher);
+      const aad = new TextEncoder().encode(aadString);
+      const plainBuf = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as unknown as BufferSource, additionalData: aad as unknown as BufferSource },
+        key,
+        cipherBytes as unknown as BufferSource
+      );
+      return dec.decode(plainBuf);
+    }
+
+    // ---- Fallback: CryptoJS AES-CBC ----
+    const saltBytes = this.fromBase64(payload.salt);
+    const ivBytes = this.fromBase64(payload.iv);
+    const saltWA = CryptoJS.lib.WordArray.create(saltBytes as unknown as number[]);
+    const ivWA = CryptoJS.lib.WordArray.create(ivBytes as unknown as number[]);
+
+    const key = CryptoJS.PBKDF2(`${password}:${aadString}`, saltWA, {
+      keySize: 256 / 32,
+      iterations: payload.iter,
+    });
+
+    const cipherWA = CryptoJS.enc.Base64.parse(payload.cipher);
+    const decrypted = CryptoJS.AES.decrypt({ ciphertext: cipherWA } as unknown as CryptoJS.lib.CipherParams, key, {
+      iv: ivWA,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+    });
+
+    const plain = decrypted.toString(CryptoJS.enc.Utf8);
+    if (!plain) {
+      throw new Error('BadPassword');
+    }
+    return plain;
   }
 
   private getAad(): Uint8Array {
-    const id = (this.block && (this.block as unknown as { id?: string }).id) || '';
     const enc = new TextEncoder();
     // 绑定上下文，防止密文移植到其他块/文档
-    return enc.encode(`editorjs-password:${id}`);
+    return enc.encode(this.getAadString());
   }
 }
